@@ -1,12 +1,11 @@
-#Define the provider
 provider "aws" {
     region = "us-west-1"    
-    access_key = ""
-    secret_key = ""
+    access_key = "AKIAZCEGTRFAX6YC2JII"
+    secret_key = "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"
     //version = "= 2.17.0"
 }
 
-#Create a virtual network
+
 resource "aws_vpc" "my_website_vpc" {
     cidr_block = "10.0.0.0/16"
     tags = {
@@ -14,10 +13,10 @@ resource "aws_vpc" "my_website_vpc" {
     }
 }
 
-#Create your application segment
-resource "aws_subnet" "my_app-subnet" {
+
+resource "aws_subnet" "website_subnet" {
     tags = {
-        Name = "APP_Subnet"
+        Name = "web_subnet"
     }
     vpc_id = aws_vpc.my_website_vpc.id
     cidr_block = "10.0.1.0/24"
@@ -26,41 +25,39 @@ resource "aws_subnet" "my_app-subnet" {
     
 }
 
-#Define routing table
-resource "aws_route_table" "my_route-table" {
+
+resource "aws_route_table" "web_rt" {
     tags = {
-        Name = "MY_Route_table"
+        Name = "website_routetable"
        
     }
      vpc_id = aws_vpc.my_website_vpc.id
 }
 
-#Associate subnet with routing table
+
 resource "aws_route_table_association" "App_Route_Association" {
-  subnet_id      = aws_subnet.my_app-subnet.id 
-  route_table_id = aws_route_table.my_route-table.id
+  subnet_id      = aws_subnet.website_subnet.id 
+  route_table_id = aws_route_table.web_rt.id
 }
 
 
-#Create internet gateway for servers to be connected to internet
-resource "aws_internet_gateway" "my_IG" {
+resource "aws_internet_gateway" "web_igw" {
     tags = {
-        Name = "MY_IGW"  
+        Name = "web_igw"  
     }
      vpc_id = aws_vpc.my_website_vpc.id
      depends_on = [aws_vpc.my_website_vpc]
 }
 
-#Add default route in routing table to point to Internet Gateway
 resource "aws_route" "default_route" {
-  route_table_id = aws_route_table.my_route-table.id
+  route_table_id = aws_route_table.web_rt.id
   destination_cidr_block = "0.0.0.0/0"
-  gateway_id = aws_internet_gateway.my_IG.id
+  gateway_id = aws_internet_gateway.web_igw.id
 }
 
-#Create a security group
-resource "aws_security_group" "App_SG" {
-    name = "App_SG"
+
+resource "aws_security_group" "web_sg" {
+    name = "web_sg"
     description = "Allow Web inbound traffic"
     vpc_id = aws_vpc.my_website_vpc.id
     ingress  {
@@ -85,34 +82,34 @@ resource "aws_security_group" "App_SG" {
     }
 }
 
-#Create a private key which can be used to login to the webserver
+
 resource "tls_private_key" "Web-Key" {
   algorithm = "RSA"
 }
 
-#Save public key attributes from the generated key
-resource "aws_key_pair" "App-Instance-Key" {
+
+resource "aws_key_pair" "web-instance-key" {
   key_name   = "Web-key"
   public_key = tls_private_key.Web-Key.public_key_openssh
 }
 
-#Save the key to your local system
+
 resource "local_file" "Web-Key" {
     content     = tls_private_key.Web-Key.private_key_pem 
     filename = "Web-Key.pem"
 }
 
-#Create your webserver instance
+
 resource "aws_instance" "Web" {
     ami = "ami-02541b8af977f6cdd"
     instance_type = "t2.micro"
     tags = {
-        Name = "WebServer1"
+        Name = "WebServer"
     }
     count =1
-    subnet_id = aws_subnet.my_app-subnet.id 
+    subnet_id = aws_subnet.website_subnet.id 
     key_name = "Web-key"
-    security_groups = [aws_security_group.App_SG.id]
+    security_groups = [aws_security_group.web_sg.id]
 
     provisioner "remote-exec" {
     connection {
@@ -130,8 +127,8 @@ resource "aws_instance" "Web" {
 
 }
 
-#Create a block volume for data persistence
-resource "aws_ebs_volume" "myebs1" {
+
+resource "aws_ebs_volume" "web-ebs" {
   availability_zone = aws_instance.Web[0].availability_zone
   size              = 1
   tags = {
@@ -139,16 +136,16 @@ resource "aws_ebs_volume" "myebs1" {
   }
 }
 
-#Attach the volume to your instance
+
 resource "aws_volume_attachment" "attach_ebs" {
-  depends_on = [aws_ebs_volume.myebs1]
+  depends_on = [aws_ebs_volume.web-ebs]
   device_name = "/dev/sdh"
-  volume_id   = aws_ebs_volume.myebs1.id
+  volume_id   = aws_ebs_volume.web-ebs.id
   instance_id = aws_instance.Web[0].id
   force_detach = true
 }
 
-#Mount the volume to your instance
+
 resource "null_resource" "nullmount" {
   depends_on = [aws_volume_attachment.attach_ebs]
     connection {
@@ -167,14 +164,14 @@ resource "null_resource" "nullmount" {
   }
 }
 
-#Define S3 ID
+
 locals {
  s3_origin_id = "s3-origin"
 }
 
-#Create a bucket to upload your static data like images
-resource "aws_s3_bucket" "mocknetserv" {
-  bucket = "mocknetserv"
+
+ resource "aws_s3_bucket" "mywebmock" {
+  bucket = "mywebmock"
   acl    = "public-read-write"
   //region = "us-east-1"
 
@@ -183,38 +180,36 @@ resource "aws_s3_bucket" "mocknetserv" {
   }
 
   tags = {
-    Name = "mocknetserv"
+    Name = "mywebmock"
     Environment = "PROD_UPB"
   }
 
- provisioner "local-exec" {
+  provisioner "local-exec" {
     command = "git clone https://github.com/Paoli99/certi-website.git web-server-image"
- }  
+ } 
 
-}
+} 
 
-#Allow public access to the bucket
 resource "aws_s3_bucket_public_access_block" "public_storage" {
- depends_on = [aws_s3_bucket.mocknetserv]
- bucket = "mocknetserv"
+ depends_on = [aws_s3_bucket.mywebmock]
+ bucket = "mywebmock"
  block_public_acls = false
  block_public_policy = false
 }
 
-#Upload your data to S3 bucket
  resource "aws_s3_bucket_object" "Object1" {
-  depends_on = [aws_s3_bucket.mocknetserv]
-  bucket = "mocknetserv"
+  depends_on = [aws_s3_bucket.mywebmock]
+  bucket = "mywebmock"
   acl    = "public-read-write"
   key = "HIMYM.JPG"
-  source = "HIMYM.JPG"
+  source = "web-server-image/HIMYM.JPG"
 } 
 
-#Create a Cloudfront distribution for CDN
-resource "aws_cloudfront_distribution" "tera-cloufront1" {
-    //depends_on = [ aws_s3_bucket_object.Object1]
+
+resource "aws_cloudfront_distribution" "web-cloudfront" {
+    depends_on = [ aws_s3_bucket_object.Object1]
     origin {
-        domain_name = aws_s3_bucket.mocknetserv.bucket_regional_domain_name
+        domain_name = aws_s3_bucket.mywebmock.bucket_regional_domain_name
         origin_id = local.s3_origin_id
     }   
     enabled = true
@@ -248,9 +243,8 @@ resource "aws_cloudfront_distribution" "tera-cloufront1" {
     } 
 }
 
-#Update the CDN image URL to your webserver code.
 resource "null_resource" "Write_Image" {
-    depends_on = [aws_cloudfront_distribution.tera-cloufront1]
+    depends_on = [aws_cloudfront_distribution.web-cloudfront]
     connection {
     type     = "ssh"
     user     = "ec2-user"
@@ -260,7 +254,7 @@ resource "null_resource" "Write_Image" {
   provisioner "remote-exec" {
         inline = [
             "sudo su << EOF",
-                    "echo \"<img src='http://${aws_cloudfront_distribution.tera-cloufront1.domain_name}/${aws_s3_bucket_object.Object1.key}' width='300' height='380'>\" >>/var/www/html/index.html",
+                    "echo \"<img src='http://${aws_cloudfront_distribution.web-cloudfront.domain_name}/${aws_s3_bucket_object.Object1.key}' width='300' height='380'>\" >>/var/www/html/index.html",
                     "echo \"</body>\" >>/var/www/html/index.html",
                     "echo \"</html>\" >>/var/www/html/index.html",
                     "EOF",    
@@ -269,7 +263,6 @@ resource "null_resource" "Write_Image" {
 
 }
 
-#success message and storing the result in a file
 resource "null_resource" "result" {
     depends_on = [null_resource.nullmount]
     provisioner "local-exec" {
@@ -277,7 +270,7 @@ resource "null_resource" "result" {
   }
 }
 
-#Test the application
+
 resource "null_resource" "running_the_website" {
     depends_on = [null_resource.Write_Image]
     provisioner "local-exec" {
