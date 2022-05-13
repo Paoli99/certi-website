@@ -184,10 +184,6 @@ locals {
     Environment = "PROD_UPB"
   }
 
-  /* provisioner "local-exec" {
-    command = "git clone https://github.com/Paoli99/certi-website.git web-server-image"
- }  */
-
 } 
 
 resource "aws_s3_bucket_public_access_block" "public_storage" {
@@ -196,15 +192,6 @@ resource "aws_s3_bucket_public_access_block" "public_storage" {
  block_public_acls = false
  block_public_policy = false
 }
-
- /* resource "aws_s3_bucket_object" "Object1" {
-  depends_on = [aws_s3_bucket.websitemockservice]
-  bucket = "websitemockservice"
-  acl    = "public-read-write"
-  key = "HIMYM.JPG"
-  source = "HIMYM.JPG"
-}  */
-
 
 resource "aws_cloudfront_distribution" "web-cloudfront" {
     //depends_on = [ aws_s3_bucket_object.Object1]
@@ -254,7 +241,6 @@ resource "null_resource" "Write_Image" {
   provisioner "remote-exec" {
         inline = [
             "sudo su << EOF",
-                    //"echo \"<img src='http://${aws_cloudfront_distribution.web-cloudfront.domain_name}/${aws_s3_bucket_object.Object1.key}' width='300' height='380'>\" >>/var/www/html/index.html",
                     "echo \"</body>\" >>/var/www/html/index.html",
                     "echo \"</html>\" >>/var/www/html/index.html",
                     "EOF",    
